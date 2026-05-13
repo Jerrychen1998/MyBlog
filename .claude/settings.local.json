@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm create *)",
+      "Bash(npm init *)",
+      "Bash(mv myblog-temp/* .)",
+      "Bash(mv myblog-temp/.* .)",
+      "Bash(rm -rf myblog-temp)",
+      "Bash(npm install *)",
+      "Bash(npm run *)",
+      "Bash(npm search *)",
+      "Bash(npm uninstall *)",
+      "Bash(git init *)",
+      "Bash(git config *)",
+      "Bash(git add *)"
+    ]
+  }
+}
