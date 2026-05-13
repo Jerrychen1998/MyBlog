@@ -12,7 +12,11 @@
       "Bash(npm uninstall *)",
       "Bash(git init *)",
       "Bash(git config *)",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git branch *)",
+      "Bash(git remote *)",
+      "Bash(git push *)"
     ]
   }
 }
