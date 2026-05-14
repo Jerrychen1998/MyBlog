@@ -42,6 +42,15 @@
         >
           {{ isSetup ? '设置并进入编辑器' : '解锁进入编辑器' }}
         </el-button>
+
+        <el-button
+          v-if="!isSetup"
+          size="large"
+          class="w-full mt-3"
+          @click="switchSpace"
+        >
+          创建新空间
+        </el-button>
       </el-form>
     </div>
   </div>
@@ -256,6 +265,16 @@ const handleUnlock = async () => {
     console.error(e)
   }
   loginLoading.value = false
+}
+
+const switchSpace = () => {
+  localStorage.removeItem('crypto-salt')
+  localStorage.removeItem('crypto-verify')
+  localStorage.removeItem('editor-notes')
+  isSetup.value = true
+  loginPassword.value = ''
+  loginConfirm.value = ''
+  ElMessage.success('已切换到新空间模式，请输入新密码')
 }
 
 const initNotes = async () => {
