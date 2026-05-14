@@ -14,24 +14,24 @@ describe('useCloudStorage', () => {
     }
   })
 
-  it('should get notes from localStorage', () => {
-    store['editor-notes'] = JSON.stringify([{ id: '1', title: 'Test' }])
+  it('should get notes from localStorage', async () => {
+    store['editor-notes'] = JSON.stringify([{ id: '1', title: 'Test', content: '' }])
     const { getNotes } = useCloudStorage()
-    const notes = getNotes()
+    const notes = await getNotes()
     expect(notes).toHaveLength(1)
     expect(notes[0].title).toBe('Test')
   })
 
-  it('should return empty array when no notes', () => {
+  it('should return empty array when no notes', async () => {
     const { getNotes } = useCloudStorage()
-    const notes = getNotes()
+    const notes = await getNotes()
     expect(notes).toEqual([])
   })
 
-  it('should save notes to localStorage', () => {
+  it('should save notes to localStorage', async () => {
     const { saveNotes } = useCloudStorage()
     const notes = [{ id: '1', title: 'Test', content: 'Content' }]
-    saveNotes(notes)
+    await saveNotes(notes)
     expect(JSON.parse(store['editor-notes'])).toEqual(notes)
   })
 

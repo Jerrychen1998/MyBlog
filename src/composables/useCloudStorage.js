@@ -1,4 +1,4 @@
-import { ref, inject } from 'vue'
+import { ref } from 'vue'
 import { ElMessage } from 'element-plus'
 
 const STORAGE_KEY = 'editor-notes'
@@ -7,12 +7,19 @@ const CLOUD_CONFIG_KEY = 'github-config'
 export function useCloudStorage() {
   const changedNotes = ref([])
   const showSyncDialog = ref(false)
+  let encryptFn = null
+  let decryptFn = null
 
   const GITHUB_CONFIG = {
     owner: '',
     repo: '',
     token: '',
     filePath: 'archive.json'
+  }
+
+  function setCrypto(encrypt, decrypt) {
+    encryptFn = encrypt
+    decryptFn = decrypt
   }
 
   const loadGithubConfig = () => {
@@ -28,13 +35,34 @@ export function useCloudStorage() {
     localStorage.setItem(CLOUD_CONFIG_KEY, JSON.stringify(GITHUB_CONFIG))
   }
 
-  const getNotes = () => {
+  const getNotes = async () => {
     const notes = localStorage.getItem(STORAGE_KEY)
-    return notes ? JSON.parse(notes) : []
+    const raw = notes ? JSON.parse(notes) : []
+    if (!decryptFn) return raw
+    const decrypted = []
+    for (const n of raw) {
+      try {
+        n.content = n.content ? await decryptFn(n.content) : ''
+      } catch {
+        n.content = ''
+      }
+      decrypted.push(n)
+    }
+    return decrypted
   }
 
-  const saveNotes = (notes) => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(notes))
+  const saveNotes = async (notes) => {
+    const toSave = []
+    for (const n of notes) {
+      const note = { ...n }
+      if (encryptFn && note.content) {
+        try {
+          note.content = await encryptFn(note.content)
+        } catch { /* keep plaintext on encrypt failure */ }
+      }
+      toSave.push(note)
+    }
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave))
   }
 
   const markNoteChanged = (note) => {
@@ -75,7 +103,17 @@ export function useCloudStorage() {
 
       const data = await response.json()
       const content = atob(data.content)
-      return JSON.parse(content)
+      const cloudNotes = JSON.parse(content)
+      if (decryptFn) {
+        for (const n of cloudNotes) {
+          try {
+            n.content = n.content ? await decryptFn(n.content) : ''
+          } catch {
+            n.content = ''
+          }
+        }
+      }
+      return cloudNotes
     } catch (error) {
       console.error('Failed to fetch cloud data:', error)
       ElMessage.error('拉取云端数据失败，请检查网络或配置')
@@ -90,7 +128,18 @@ export function useCloudStorage() {
       return false
     }
 
-    const content = JSON.stringify(notes, null, 2)
+    const toUpload = []
+    for (const n of notes) {
+      const note = { ...n }
+      if (encryptFn && note.content) {
+        try {
+          note.content = await encryptFn(note.content)
+        } catch { /* keep plaintext on encrypt failure */ }
+      }
+      toUpload.push(note)
+    }
+
+    const content = JSON.stringify(toUpload, null, 2)
     const encoded = btoa(unescape(encodeURIComponent(content)))
 
     try {
@@ -156,11 +205,11 @@ export function useCloudStorage() {
 
     const success = await uploadCloudData(cloudData)
     if (success) {
-      const localNotes = getNotes()
+      const localNotes = await getNotes()
       const localIndex = localNotes.findIndex(n => n.id === note.id)
       if (localIndex >= 0) {
         localNotes[localIndex].isArchive = true
-        saveNotes(localNotes)
+        await saveNotes(localNotes)
       }
     }
     return success
@@ -170,7 +219,7 @@ export function useCloudStorage() {
     const cloudData = await fetchCloudData()
     if (cloudData === null) return { success: false, data: null }
 
-    const localNotes = getNotes()
+    const localNotes = await getNotes()
     const conflicts = []
 
     cloudData.forEach(cloudNote => {
@@ -188,7 +237,7 @@ export function useCloudStorage() {
     const nonLocalCloudNotes = cloudData.filter(cn => !archivedNotes.find(an => an.id === cn.id))
 
     const mergedNotes = [...localNotes, ...nonLocalCloudNotes.map(n => ({ ...n, isArchive: true }))]
-    saveNotes(mergedNotes)
+    await saveNotes(mergedNotes)
 
     return { success: true, data: mergedNotes }
   }
@@ -224,14 +273,14 @@ export function useCloudStorage() {
 
     const success = await uploadCloudData(updatedNotes)
     if (success) {
-      const localNotes = getNotes()
+      const localNotes = await getNotes()
       selectedNotes.forEach(selected => {
         const localIndex = localNotes.findIndex(n => n.id === selected.id)
         if (localIndex >= 0) {
           localNotes[localIndex].isArchive = true
         }
       })
-      saveNotes(localNotes)
+      await saveNotes(localNotes)
       ElMessage.success('同步成功')
     }
 
@@ -248,6 +297,7 @@ export function useCloudStorage() {
   return {
     changedNotes,
     showSyncDialog,
+    setCrypto,
     getNotes,
     saveNotes,
     markNoteChanged,
