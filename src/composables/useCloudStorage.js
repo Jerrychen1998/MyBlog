@@ -1,7 +1,6 @@
 import { ref } from 'vue'
 import { ElMessage } from 'element-plus'
 
-const STORAGE_KEY = 'editor-notes'
 const CLOUD_CONFIG_KEY = 'github-config'
 
 export function useCloudStorage() {
@@ -9,24 +8,32 @@ export function useCloudStorage() {
   const showSyncDialog = ref(false)
   let encryptFn = null
   let decryptFn = null
+  let getNotesKeyFn = null
+  let getArchivePathFn = null
+  let currentSpaceIdRef = null
 
   const GITHUB_CONFIG = {
     owner: '',
     repo: '',
-    token: '',
-    filePath: 'archive.json'
+    token: ''
   }
 
-  function setCrypto(encrypt, decrypt) {
+  function setCrypto(encrypt, decrypt, getNotesKey, getArchivePath, getSpaceId) {
     encryptFn = encrypt
     decryptFn = decrypt
+    getNotesKeyFn = getNotesKey
+    getArchivePathFn = getArchivePath
+    currentSpaceIdRef = getSpaceId
+  }
+
+  function getStorageKey() {
+    const spaceId = currentSpaceIdRef ? currentSpaceIdRef() : 'default'
+    return getNotesKeyFn ? getNotesKeyFn(spaceId) : 'editor-notes'
   }
 
   const loadGithubConfig = () => {
     const saved = localStorage.getItem(CLOUD_CONFIG_KEY)
-    if (saved) {
-      Object.assign(GITHUB_CONFIG, JSON.parse(saved))
-    }
+    if (saved) Object.assign(GITHUB_CONFIG, JSON.parse(saved))
     return GITHUB_CONFIG
   }
 
@@ -36,45 +43,39 @@ export function useCloudStorage() {
   }
 
   const getNotes = async () => {
-    const notes = localStorage.getItem(STORAGE_KEY)
+    const key = getStorageKey()
+    const notes = localStorage.getItem(key)
     const raw = notes ? JSON.parse(notes) : []
     if (!decryptFn) return raw
     const decrypted = []
     for (const n of raw) {
-      try {
-        n.content = n.content ? await decryptFn(n.content) : ''
-      } catch {
-        n.content = ''
-      }
+      try { n.content = n.content ? await decryptFn(n.content) : '' }
+      catch { n.content = '' }
       decrypted.push(n)
     }
     return decrypted
   }
 
   const saveNotes = async (notes) => {
+    const key = getStorageKey()
     const toSave = []
     for (const n of notes) {
       const note = { ...n }
       if (encryptFn && note.content) {
-        try {
-          note.content = await encryptFn(note.content)
-        } catch { /* keep plaintext on encrypt failure */ }
+        try { note.content = await encryptFn(note.content) }
+        catch {}
       }
       toSave.push(note)
     }
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave))
+    localStorage.setItem(key, JSON.stringify(toSave))
   }
 
   const markNoteChanged = (note) => {
     const exists = changedNotes.value.find(n => n.id === note.id)
-    if (!exists) {
-      changedNotes.value.push({ ...note })
-    }
+    if (!exists) changedNotes.value.push({ ...note })
   }
 
-  const clearChangedNotes = () => {
-    changedNotes.value = []
-  }
+  const clearChangedNotes = () => { changedNotes.value = [] }
 
   const fetchCloudData = async () => {
     const config = loadGithubConfig()
@@ -83,34 +84,23 @@ export function useCloudStorage() {
       return null
     }
 
+    const filePath = getArchivePathFn ? getArchivePathFn(currentSpaceIdRef()) : 'archive.json'
+
     try {
       const response = await fetch(
-        `https://api.github.com/repos/${config.owner}/${config.repo}/contents/${config.filePath}`,
-        {
-          headers: {
-            'Authorization': `token ${config.token}`,
-            'Accept': 'application/vnd.github.v3+json'
-          }
-        }
+        `https://api.github.com/repos/${config.owner}/${config.repo}/contents/${filePath}`,
+        { headers: { 'Authorization': `token ${config.token}`, 'Accept': 'application/vnd.github.v3+json' } }
       )
-
       if (!response.ok) {
-        if (response.status === 404) {
-          return []
-        }
+        if (response.status === 404) return []
         throw new Error(`HTTP ${response.status}`)
       }
-
       const data = await response.json()
-      const content = atob(data.content)
-      const cloudNotes = JSON.parse(content)
+      const cloudNotes = JSON.parse(atob(data.content))
       if (decryptFn) {
         for (const n of cloudNotes) {
-          try {
-            n.content = n.content ? await decryptFn(n.content) : ''
-          } catch {
-            n.content = ''
-          }
+          try { n.content = n.content ? await decryptFn(n.content) : '' }
+          catch { n.content = '' }
         }
       }
       return cloudNotes
@@ -128,13 +118,13 @@ export function useCloudStorage() {
       return false
     }
 
+    const filePath = getArchivePathFn ? getArchivePathFn(currentSpaceIdRef()) : 'archive.json'
     const toUpload = []
     for (const n of notes) {
       const note = { ...n }
       if (encryptFn && note.content) {
-        try {
-          note.content = await encryptFn(note.content)
-        } catch { /* keep plaintext on encrypt failure */ }
+        try { note.content = await encryptFn(note.content) }
+        catch {}
       }
       toUpload.push(note)
     }
@@ -144,19 +134,13 @@ export function useCloudStorage() {
 
     try {
       const getResponse = await fetch(
-        `https://api.github.com/repos/${config.owner}/${config.repo}/contents/${config.filePath}`,
-        {
-          headers: {
-            'Authorization': `token ${config.token}`,
-            'Accept': 'application/vnd.github.v3+json'
-          }
-        }
+        `https://api.github.com/repos/${config.owner}/${config.repo}/contents/${filePath}`,
+        { headers: { 'Authorization': `token ${config.token}`, 'Accept': 'application/vnd.github.v3+json' } }
       )
-
       const sha = getResponse.ok ? (await getResponse.json()).sha : undefined
 
       const response = await fetch(
-        `https://api.github.com/repos/${config.owner}/${config.repo}/contents/${config.filePath}`,
+        `https://api.github.com/repos/${config.owner}/${config.repo}/contents/${filePath}`,
         {
           method: 'PUT',
           headers: {
@@ -165,7 +149,7 @@ export function useCloudStorage() {
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
-            message: `Update notes - ${new Date().toISOString()}`,
+            message: `Update notes (${currentSpaceIdRef()}) - ${new Date().toISOString()}`,
             content: encoded,
             sha
           })
@@ -174,18 +158,15 @@ export function useCloudStorage() {
 
       if (!response.ok) {
         const errorData = await response.json()
-        if (errorData.message && errorData.message.includes('permission')) {
-          throw new Error('PERMISSION_DENIED')
-        }
+        if (errorData.message?.includes('permission')) throw new Error('PERMISSION_DENIED')
         throw new Error(`HTTP ${response.status}`)
       }
-
       return true
     } catch (error) {
       if (error.message === 'PERMISSION_DENIED') {
         ElMessage.error('GitHub仓库权限不足，请检查仓库设置')
       } else {
-        console.error('Failed to upload cloud data:', error)
+        console.error('Failed to upload:', error)
         ElMessage.error('同步失败，请检查网络后重试')
       }
       return false
@@ -195,14 +176,12 @@ export function useCloudStorage() {
   const syncNoteToCloud = async (note) => {
     const cloudData = await fetchCloudData()
     if (cloudData === null) return false
-
     const existingIndex = cloudData.findIndex(n => n.id === note.id)
     if (existingIndex >= 0) {
       cloudData[existingIndex] = { ...note, updateTime: Date.now() }
     } else {
       cloudData.push({ ...note, createTime: Date.now(), updateTime: Date.now() })
     }
-
     const success = await uploadCloudData(cloudData)
     if (success) {
       const localNotes = await getNotes()
@@ -218,28 +197,18 @@ export function useCloudStorage() {
   const refreshCloudData = async () => {
     const cloudData = await fetchCloudData()
     if (cloudData === null) return { success: false, data: null }
-
     const localNotes = await getNotes()
     const conflicts = []
-
-    cloudData.forEach(cloudNote => {
-      const localNote = localNotes.find(n => n.id === cloudNote.id)
-      if (localNote && localNote.isArchive && localNote.content !== cloudNote.content) {
-        conflicts.push(cloudNote)
-      }
+    cloudData.forEach(cn => {
+      const ln = localNotes.find(n => n.id === cn.id)
+      if (ln && ln.isArchive && ln.content !== cn.content) conflicts.push(cn)
     })
-
-    if (conflicts.length > 0) {
-      return { success: false, data: null, conflicts }
-    }
-
+    if (conflicts.length > 0) return { success: false, data: null, conflicts }
     const archivedNotes = localNotes.filter(n => n.isArchive)
-    const nonLocalCloudNotes = cloudData.filter(cn => !archivedNotes.find(an => an.id === cn.id))
-
-    const mergedNotes = [...localNotes, ...nonLocalCloudNotes.map(n => ({ ...n, isArchive: true }))]
-    await saveNotes(mergedNotes)
-
-    return { success: true, data: mergedNotes }
+    const nonLocal = cloudData.filter(cn => !archivedNotes.find(an => an.id === cn.id))
+    const merged = [...localNotes, ...nonLocal.map(n => ({ ...n, isArchive: true }))]
+    await saveNotes(merged)
+    return { success: true, data: merged }
   }
 
   const setupSyncInterceptor = () => {
@@ -258,32 +227,23 @@ export function useCloudStorage() {
       ElMessage.warning('请先配置GitHub仓库信息')
       return false
     }
-
     const cloudData = await fetchCloudData() || []
     const updatedNotes = [...cloudData]
-
     selectedNotes.forEach(note => {
-      const existingIndex = updatedNotes.findIndex(n => n.id === note.id)
-      if (existingIndex >= 0) {
-        updatedNotes[existingIndex] = { ...note, updateTime: Date.now() }
-      } else {
-        updatedNotes.push({ ...note, createTime: Date.now(), updateTime: Date.now() })
-      }
+      const idx = updatedNotes.findIndex(n => n.id === note.id)
+      if (idx >= 0) updatedNotes[idx] = { ...note, updateTime: Date.now() }
+      else updatedNotes.push({ ...note, createTime: Date.now(), updateTime: Date.now() })
     })
-
     const success = await uploadCloudData(updatedNotes)
     if (success) {
       const localNotes = await getNotes()
-      selectedNotes.forEach(selected => {
-        const localIndex = localNotes.findIndex(n => n.id === selected.id)
-        if (localIndex >= 0) {
-          localNotes[localIndex].isArchive = true
-        }
+      selectedNotes.forEach(s => {
+        const idx = localNotes.findIndex(n => n.id === s.id)
+        if (idx >= 0) localNotes[idx].isArchive = true
       })
       await saveNotes(localNotes)
       ElMessage.success('同步成功')
     }
-
     clearChangedNotes()
     showSyncDialog.value = false
     return success
@@ -295,20 +255,10 @@ export function useCloudStorage() {
   }
 
   return {
-    changedNotes,
-    showSyncDialog,
-    setCrypto,
-    getNotes,
-    saveNotes,
-    markNoteChanged,
-    fetchCloudData,
-    uploadCloudData,
-    syncNoteToCloud,
-    refreshCloudData,
-    loadGithubConfig,
-    saveGithubConfig,
-    setupSyncInterceptor,
-    handleSyncConfirm,
-    handleSyncCancel
+    changedNotes, showSyncDialog, setCrypto,
+    getNotes, saveNotes, markNoteChanged,
+    fetchCloudData, uploadCloudData, syncNoteToCloud, refreshCloudData,
+    loadGithubConfig, saveGithubConfig,
+    setupSyncInterceptor, handleSyncConfirm, handleSyncCancel
   }
 }

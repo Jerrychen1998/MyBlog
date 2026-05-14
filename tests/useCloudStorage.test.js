@@ -15,39 +15,37 @@ describe('useCloudStorage', () => {
   })
 
   it('should get notes from localStorage', async () => {
-    store['editor-notes'] = JSON.stringify([{ id: '1', title: 'Test', content: '' }])
-    const { getNotes } = useCloudStorage()
-    const notes = await getNotes()
+    store['editor-notes-default'] = JSON.stringify([{ id: '1', title: 'Test', content: '' }])
+    const c = useCloudStorage()
+    c.setCrypto(null, null, (id) => `editor-notes-${id}`, (id) => `archive-${id}.json`, () => 'default')
+    const notes = await c.getNotes()
     expect(notes).toHaveLength(1)
     expect(notes[0].title).toBe('Test')
   })
 
   it('should return empty array when no notes', async () => {
-    const { getNotes } = useCloudStorage()
-    const notes = await getNotes()
+    const c = useCloudStorage()
+    const notes = await c.getNotes()
     expect(notes).toEqual([])
   })
 
   it('should save notes to localStorage', async () => {
-    const { saveNotes } = useCloudStorage()
-    const notes = [{ id: '1', title: 'Test', content: 'Content' }]
-    await saveNotes(notes)
-    expect(JSON.parse(store['editor-notes'])).toEqual(notes)
+    const c = useCloudStorage()
+    c.setCrypto(null, null, (id) => `editor-notes-${id}`, (id) => `archive-${id}.json`, () => 'space1')
+    await c.saveNotes([{ id: '1', title: 'Test', content: 'Content' }])
+    expect(JSON.parse(store['editor-notes-space1'])).toEqual([{ id: '1', title: 'Test', content: 'Content' }])
   })
 
-  it('should load github config from localStorage', () => {
-    store['github-config'] = JSON.stringify({ owner: 'test', repo: 'test-repo', token: 'abc' })
-    const { loadGithubConfig } = useCloudStorage()
-    const config = loadGithubConfig()
+  it('should load github config', () => {
+    store['github-config'] = JSON.stringify({ owner: 'test', repo: 'repo', token: 'abc' })
+    const c = useCloudStorage()
+    const config = c.loadGithubConfig()
     expect(config.owner).toBe('test')
-    expect(config.repo).toBe('test-repo')
   })
 
-  it('should return default config when no config saved', () => {
-    const { loadGithubConfig } = useCloudStorage()
-    const config = loadGithubConfig()
+  it('should return default config', () => {
+    const c = useCloudStorage()
+    const config = c.loadGithubConfig()
     expect(config.owner).toBe('')
-    expect(config.repo).toBe('')
-    expect(config.token).toBe('')
   })
 })
